@@ -31,7 +31,8 @@
         font-weight: bold;
       }
       input,
-      textarea {
+      textarea,
+      select {
         width: 100%;
         padding: 8px;
         box-sizing: border-box;
@@ -63,7 +64,7 @@
           <input type="text" id="name" name="name" required />
         </div>
         <div>
-          <label for="price">Price:</label>
+          <label for="price">Price (INR):</label>
           <input type="number" id="price" name="price" step="0.01" required />
         </div>
         <div>
@@ -73,6 +74,25 @@
         <div>
           <label for="image_url">Image URL:</label>
           <input type="url" id="image_url" name="image_url" />
+        </div>
+        <div>
+          <label for="availability">Availability:</label>
+          <select id="availability" name="availability" required>
+            <option value="in stock">In Stock</option>
+            <option value="out of stock">Out of Stock</option>
+          </select>
+        </div>
+        <div>
+          <label for="condition">Condition:</label>
+          <select id="condition" name="condition" required>
+            <option value="new">New</option>
+            <option value="used">Used</option>
+            <option value="refurbished">Refurbished</option>
+          </select>
+        </div>
+        <div>
+          <label for="brand">Brand:</label>
+          <input type="text" id="brand" name="brand" required />
         </div>
         <button type="submit">Add Product</button>
       </form>

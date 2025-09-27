@@ -1,4 +1,3 @@
-
 require("dotenv").config();
 const express = require("express");
 const axios = require("axios");
@@ -35,6 +34,9 @@ const productSchema = new mongoose.Schema({
   description: String,
   image_url: String,
   product_retailer_id: String, // Store the product ID as a string for WhatsApp
+  availability: { type: String, default: "in stock" }, // new field
+  condition: { type: String, default: "new" }, // new field
+  brand: { type: String, default: "MyBrand" }, // new field
 });
 const Product = mongoose.model("Product", productSchema);
 
@@ -94,13 +96,24 @@ app.get("/", (req, res) => {
 });
 
 app.post("/add-product", async (req, res) => {
-  const { name, price, description, image_url } = req.body;
+  const {
+    name,
+    price,
+    description,
+    image_url,
+    availability,
+    condition,
+    brand,
+  } = req.body;
   try {
     const newProduct = new Product({
       name,
       price,
       description,
       image_url,
+      availability: availability || "in stock",
+      condition: condition || "new",
+      brand: brand || "MyBrand",
       product_retailer_id: new mongoose.Types.ObjectId().toString(),
     });
     await newProduct.save();
@@ -115,6 +128,51 @@ app.post("/add-product", async (req, res) => {
 // ----------------------------------------------------
 // WhatsApp Webhook Endpoints
 // ----------------------------------------------------
+//json to csv
+app.get("/products-feed.csv", async (req, res) => {
+  try {
+    const products = await Product.find({});
+
+    if (!products.length) {
+      return res.status(404).send("No products available");
+    }
+
+    const formattedProducts = products.map((p) => ({
+      id: p.product_retailer_id,
+      title: p.name,
+      description: p.description || "No description",
+      availability: p.availability || "in stock",
+      condition: p.condition || "new",
+      price: `${p.price.toFixed(2)} INR`,
+      link: `https://yourdomain.com/product/${p._id}`, // adjust if you have real product pages
+      image_link: p.image_url,
+      brand: p.brand || "MyBrand",
+    }));
+
+    const fields = [
+      "id",
+      "title",
+      "description",
+      "availability",
+      "condition",
+      "price",
+      "link",
+      "image_link",
+      "brand",
+    ];
+
+    const { Parser } = require("json2csv");
+    const json2csvParser = new Parser({ fields });
+    const csv = json2csvParser.parse(formattedProducts);
+
+    res.header("Content-Type", "text/csv");
+    res.attachment("products-feed.csv");
+    res.send(csv);
+  } catch (error) {
+    console.error("Error generating feed:", error);
+    res.status(500).send("Failed to generate product feed.");
+  }
+});
 
 // Verification endpoint
 app.get("/", (req, res) => {
