@@ -4,35 +4,34 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Shop Inventory System</title>
+    <title>Inventory Management System</title>
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-    <!DOCTYPE html>
-    <html lang="en">
-
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Shop Inventory System</title>
-        <link rel="stylesheet" href="style.css">
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-    </head>
+</head>
 
 <body>
     <div class="app-container">
-        <nav class="sidebar">
-            <div class="logo">ShopManager</div>
+        <button class="menu-toggle" id="menu-toggle">☰</button>
+
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="logo">
+                ShopManager
+                <span class="close-sidebar" id="close-sidebar">&times;</span>
+            </div>
             <ul class="nav-links">
-                <li class="active" data-view="analytics">Analytics</li>
-                <li data-view="inventory">Inventory</li>
+                <li data-view="analytics">Analytics</li>
+
+                <li data-view="inventory" class="active">Inventory</li>
                 <li data-view="pos">Point of Sale</li>
                 <li data-view="orders">Order History</li>
             </ul>
-        </nav>
+        </aside>
 
+        <!-- Main Content -->
         <main class="content">
             <!-- Inventory View -->
-            <div id="inventory-view" class="view hidden">
+            <div id="inventory-view" class="view active">
                 <div class="view-header">
                     <h2>Inventory Management</h2>
                     <button id="add-product-btn" class="btn-primary">Add Product</button>
@@ -97,6 +96,7 @@
                                 <th>Items</th>
                                 <th>Total</th>
                                 <th>Payment</th>
+                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
