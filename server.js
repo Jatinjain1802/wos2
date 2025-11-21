@@ -1,23 +1,17 @@
 require("dotenv").config();
 const express = require("express");
-const axios = require("axios");
 const mongoose = require("mongoose");
+const path = require("path");
 const app = express();
 const PORT = process.env.PORT || 3000;
+
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static("public"));
 
 // Load credentials from .env
-const {
-  WHATSAPP_ACCESS_TOKEN,
-  WHATSAPP_PHONE_NUMBER_ID,
-  VERIFY_TOKEN,
-  MONGO_URI,
-} = process.env;
-
-const WHATSAPP_API_URL = `https://graph.facebook.com/v19.0/${WHATSAPP_PHONE_NUMBER_ID}/messages`;
+const { MONGO_URI } = process.env;
 
 // ----------------------------------------------------
 // MongoDB Connection and Schemas
@@ -29,330 +23,232 @@ mongoose
   .catch((err) => console.error("Could not connect to MongoDB:", err));
 
 const productSchema = new mongoose.Schema({
-  name: String,
-  price: Number,
+  name: { type: String, required: true },
+  price: { type: Number, required: true },
   description: String,
   image_url: String,
-  product_retailer_id: String, // Store the product ID as a string for WhatsApp
-  availability: { type: String, default: "in stock" }, // new field
-  condition: { type: String, default: "new" }, // new field
-  brand: { type: String, default: "MyBrand" }, // new field
+  sku: { type: String, unique: true, required: true },
+  quantity: { type: Number, default: 0 },
+  category: { type: String, default: "General" },
+  brand: { type: String, default: "Generic" },
+  created_at: { type: Date, default: Date.now },
 });
 const Product = mongoose.model("Product", productSchema);
 
-const cartSchema = new mongoose.Schema({
-  phone_number: { type: String, unique: true },
+const orderSchema = new mongoose.Schema({
+  customer_name: String,
   items: [
     {
-      product_id: String,
-      quantity: { type: Number, default: 1 },
+      product_id: { type: mongoose.Schema.Types.ObjectId, ref: "Product" },
+      name: String,
+      quantity: Number,
+      price: Number,
     },
   ],
-});
-const Cart = mongoose.model("Cart", cartSchema);
-
-const orderSchema = new mongoose.Schema({
-  phone_number: String,
-  items: Array,
   total_price: Number,
-  status: { type: String, default: "Pending" },
-  payment_method: { type: String, default: "Cash on Delivery" },
+  status: { type: String, default: "Completed" },
+  payment_method: { type: String, default: "Cash" },
   created_at: { type: Date, default: Date.now },
 });
 const Order = mongoose.model("Order", orderSchema);
 
-// Helper function to send messages to WhatsApp
-const sendMessage = async (to, messagePayload) => {
+// ----------------------------------------------------
+// API Endpoints
+// ----------------------------------------------------
+
+// Get all products
+app.get("/api/products", async (req, res) => {
   try {
-    await axios.post(
-      WHATSAPP_API_URL,
+    const products = await Product.find().sort({ created_at: -1 });
+    res.json(products);
+  } catch (error) {
+    res.status(500).json({ error: "Error fetching products" });
+  }
+});
+
+// Get single product
+app.get("/api/products/:id", async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id);
+    if (!product) return res.status(404).json({ error: "Product not found" });
+    res.json(product);
+  } catch (error) {
+    res.status(500).json({ error: "Error fetching product" });
+  }
+});
+
+// Create product
+app.post("/api/products", async (req, res) => {
+  try {
+    const newProduct = new Product(req.body);
+    await newProduct.save();
+    res.status(201).json(newProduct);
+  } catch (error) {
+    console.error("Error creating product:", error);
+    res.status(400).json({ error: "Error creating product", details: error.message });
+  }
+});
+
+// Update product
+app.put("/api/products/:id", async (req, res) => {
+  try {
+    const updatedProduct = await Product.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      { new: true }
+    );
+    res.json(updatedProduct);
+  } catch (error) {
+    res.status(400).json({ error: "Error updating product" });
+  }
+});
+
+// Delete product
+app.delete("/api/products/:id", async (req, res) => {
+  try {
+    await Product.findByIdAndDelete(req.params.id);
+    res.json({ message: "Product deleted" });
+  } catch (error) {
+    res.status(500).json({ error: "Error deleting product" });
+  }
+});
+
+// Create Order (POS)
+app.post("/api/orders", async (req, res) => {
+  const { customer_name, items, payment_method } = req.body;
+
+  if (!items || items.length === 0) {
+    return res.status(400).json({ error: "No items in order" });
+  }
+
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    let total_price = 0;
+    const orderItems = [];
+
+    for (const item of items) {
+      const product = await Product.findById(item.product_id).session(session);
+      if (!product) {
+        throw new Error(`Product ${item.product_id} not found`);
+      }
+      if (product.quantity < item.quantity) {
+        throw new Error(`Insufficient stock for ${product.name}`);
+      }
+
+      product.quantity -= item.quantity;
+      await product.save({ session });
+
+      orderItems.push({
+        product_id: product._id,
+        name: product.name,
+        quantity: item.quantity,
+        price: product.price,
+      });
+      total_price += product.price * item.quantity;
+    }
+
+    const newOrder = new Order({
+      customer_name: customer_name || "Walk-in Customer",
+      items: orderItems,
+      total_price,
+      payment_method: payment_method || "Cash",
+    });
+
+    await newOrder.save({ session });
+    await session.commitTransaction();
+    session.endSession();
+
+    res.status(201).json(newOrder);
+  } catch (error) {
+    await session.abortTransaction();
+    session.endSession();
+    console.error("Order error:", error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Get Orders
+app.get("/api/orders", async (req, res) => {
+  try {
+    const orders = await Order.find().sort({ created_at: -1 });
+    res.json(orders);
+  } catch (error) {
+    res.status(500).json({ error: "Error fetching orders" });
+  }
+});
+
+// Get single order
+app.get("/api/orders/:id", async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ error: "Order not found" });
+    res.json(order);
+  } catch (error) {
+    res.status(500).json({ error: "Error fetching order" });
+  }
+});
+
+// Analytics Endpoint
+app.get("/api/analytics", async (req, res) => {
+  try {
+    const totalRevenue = await Order.aggregate([
+      { $group: { _id: null, total: { $sum: "$total_price" } } },
+    ]);
+    const totalOrders = await Order.countDocuments();
+    const totalProducts = await Product.countDocuments();
+
+    // Top selling products
+    const topProducts = await Order.aggregate([
+      { $unwind: "$items" },
       {
-        messaging_product: "whatsapp",
-        to: to,
-        ...messagePayload,
+        $group: {
+          _id: "$items.name",
+          totalSold: { $sum: "$items.quantity" },
+        },
+      },
+      { $sort: { totalSold: -1 } },
+      { $limit: 5 },
+    ]);
+
+    // Sales last 7 days
+    const last7Days = await Order.aggregate([
+      {
+        $match: {
+          created_at: {
+            $gte: new Date(new Date().setDate(new Date().getDate() - 7)),
+          },
+        },
       },
       {
-        headers: {
-          Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
-          "Content-Type": "application/json",
+        $group: {
+          _id: { $dateToString: { format: "%Y-%m-%d", date: "$created_at" } },
+          dailyRevenue: { $sum: "$total_price" },
         },
-      }
-    );
-    console.log(`Message sent to ${to}`);
-  } catch (error) {
-    console.error(
-      "Failed to send message:",
-      error.response ? error.response.data : error.message
-    );
-  }
-};
+      },
+      { $sort: { _id: 1 } },
+    ]);
 
-// ----------------------------------------------------
-// Web Form Endpoints (for the admin panel)
-// ----------------------------------------------------
-
-app.get("/", (req, res) => {
-  res.sendFile(__dirname + "/index.html");
-});
-
-app.post("/add-product", async (req, res) => {
-  const {
-    name,
-    price,
-    description,
-    image_url,
-    availability,
-    condition,
-    brand,
-  } = req.body;
-  try {
-    const newProduct = new Product({
-      name,
-      price,
-      description,
-      image_url,
-      availability: availability || "in stock",
-      condition: condition || "new",
-      brand: brand || "MyBrand",
-      product_retailer_id: new mongoose.Types.ObjectId().toString(),
+    res.json({
+      revenue: totalRevenue[0]?.total || 0,
+      orders: totalOrders,
+      products: totalProducts,
+      topProducts,
+      salesTrend: last7Days,
     });
-    await newProduct.save();
-    console.log("Product added to database:", newProduct._id);
-    res.status(200).send("Product added successfully!");
   } catch (error) {
-    console.error("Error adding product:", error);
-    res.status(500).send("Error adding product.");
+    console.error("Analytics Error:", error);
+    res.status(500).json({ error: "Error fetching analytics" });
   }
 });
 
-// ----------------------------------------------------
-// WhatsApp Webhook Endpoints
-// ----------------------------------------------------
-//json to csv
-app.get("/products-feed.csv", async (req, res) => {
-  try {
-    const products = await Product.find({});
-
-    if (!products.length) {
-      return res.status(404).send("No products available");
-    }
-
-    const formattedProducts = products.map((p) => ({
-      id: p.product_retailer_id,
-      title: p.name,
-      description: p.description || "No description",
-      availability: p.availability || "in stock",
-      condition: p.condition || "new",
-      price: `${p.price.toFixed(2)} INR`,
-      link: `https://yourdomain.com/product/${p._id}`, // adjust if you have real product pages
-      image_link: p.image_url,
-      brand: p.brand || "MyBrand",
-    }));
-
-    const fields = [
-      "id",
-      "title",
-      "description",
-      "availability",
-      "condition",
-      "price",
-      "link",
-      "image_link",
-      "brand",
-    ];
-
-    const { Parser } = require("json2csv");
-    const json2csvParser = new Parser({ fields });
-    const csv = json2csvParser.parse(formattedProducts);
-
-    res.header("Content-Type", "text/csv");
-    res.attachment("products-feed.csv");
-    res.send(csv);
-  } catch (error) {
-    console.error("Error generating feed:", error);
-    res.status(500).send("Failed to generate product feed.");
-  }
-});
-
-// Verification endpoint
-app.get("/", (req, res) => {
-  const mode = req.query["hub.mode"];
-  const token = req.query["hub.verify_token"];
-  const challenge = req.query["hub.challenge"];
-  if (mode === "subscribe" && token === VERIFY_TOKEN) {
-    console.log("Webhook verified!");
-    res.status(200).send(challenge);
-  } else {
-    res.sendStatus(403);
-  }
-});
-
-// Main webhook listener
-app.post("/", async (req, res) => {
-  const changes = req.body.entry?.[0]?.changes?.[0];
-  if (changes && changes.value.messages) {
-    const message = changes.value.messages[0];
-    const from = message.from;
-    const type = message.type;
-    let responseMessage = null;
-
-    if (type === "text") {
-      const receivedText = message.text.body.toLowerCase();
-      if (receivedText.includes("hi")) {
-        responseMessage = {
-          type: "interactive",
-          interactive: {
-            type: "button",
-            body: { text: "Hello! Welcome to our store. How can I help you?" },
-            action: {
-              buttons: [
-                {
-                  type: "reply",
-                  reply: { id: "view_catalog", title: "View Catalog" },
-                },
-              ],
-            },
-          },
-        };
-      } else {
-        responseMessage = {
-          type: "text",
-          text: {
-            body: "Sorry, I didn't understand that. Please type 'hi' to start.",
-          },
-        };
-      }
-    } else if (
-      type === "interactive" &&
-      message.interactive.type === "button_reply"
-    ) {
-      const buttonId = message.interactive.button_reply.id;
-
-      if (buttonId === "view_catalog") {
-        const products = await Product.find({});
-        if (products.length > 0) {
-          const productItems = products.map((p) => ({
-            product_retailer_id: p.product_retailer_id,
-          }));
-
-          responseMessage = {
-            type: "interactive",
-            interactive: {
-              type: "product_list",
-              header: { type: "text", text: "Our Delicious Menu" },
-              body: { text: "Select your favorite items to add to cart." },
-              footer: { text: "We offer Cash on Delivery." },
-              action: {
-                catalog_id: "YOUR_CATALOG_ID_HERE",
-                sections: [{ title: "All Items", product_items: productItems }],
-              },
-            },
-          };
-        } else {
-          responseMessage = {
-            type: "text",
-            text: {
-              body: "Sorry, our catalog is empty right now. Please check back later.",
-            },
-          };
-        }
-      } else if (buttonId === "checkout") {
-        const cart = await Cart.findOne({ phone_number: from });
-        if (cart && cart.items.length > 0) {
-          const productIds = cart.items.map((item) => item.product_id);
-          const products = await Product.find({
-            product_retailer_id: { $in: productIds },
-          });
-
-          let totalPrice = 0;
-          const orderItems = cart.items.map((item) => {
-            const product = products.find(
-              (p) => p.product_retailer_id === item.product_id
-            );
-            const itemTotal = (product ? product.price : 0) * item.quantity;
-            totalPrice += itemTotal;
-            return {
-              name: product.name,
-              quantity: item.quantity,
-              price: product.price,
-            };
-          });
-
-          const newOrder = new Order({
-            phone_number: from,
-            items: orderItems,
-            total_price: totalPrice,
-          });
-          await newOrder.save();
-          await Cart.findOneAndDelete({ phone_number: from });
-
-          responseMessage = {
-            type: "text",
-            text: {
-              body: `Thank you for your order! Your total is ₹${totalPrice.toFixed(
-                2
-              )}. Your order will be delivered with Cash on Delivery.`,
-            },
-          };
-        } else {
-          responseMessage = {
-            type: "text",
-            text: { body: "Your cart is empty. Please add items to checkout." },
-          };
-        }
-      }
-    } else if (
-      type === "interactive" &&
-      message.interactive.type === "product_action"
-    ) {
-      const product_id = message.interactive.product_action.product_retailer_id;
-
-      const existingCart = await Cart.findOne({ phone_number: from });
-      if (existingCart) {
-        const itemIndex = existingCart.items.findIndex(
-          (item) => item.product_id === product_id
-        );
-        if (itemIndex > -1) {
-          existingCart.items[itemIndex].quantity += 1;
-        } else {
-          existingCart.items.push({ product_id: product_id, quantity: 1 });
-        }
-        await existingCart.save();
-      } else {
-        const newCart = new Cart({
-          phone_number: from,
-          items: [{ product_id: product_id, quantity: 1 }],
-        });
-        await newCart.save();
-      }
-
-      responseMessage = {
-        type: "interactive",
-        interactive: {
-          type: "button",
-          body: { text: "Item added to your cart. Ready to checkout?" },
-          action: {
-            buttons: [
-              {
-                type: "reply",
-                reply: { id: "checkout", title: "Proceed to Checkout" },
-              },
-            ],
-          },
-          footer: { text: "We offer Cash on Delivery." },
-        },
-      };
-    }
-
-    if (responseMessage) {
-      await sendMessage(from, responseMessage);
-    }
-  }
-  res.status(200).send("OK");
+// Serve Frontend
+app.get(/.*/, (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
 // Start the server
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
-  console.log(`Open http://localhost:${PORT} in your browser to add products.`);
 });

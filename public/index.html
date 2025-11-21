@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shop Inventory System</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <!DOCTYPE html>
+    <html lang="en">
+
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Shop Inventory System</title>
+        <link rel="stylesheet" href="style.css">
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    </head>
+
+<body>
+    <div class="app-container">
+        <nav class="sidebar">
+            <div class="logo">ShopManager</div>
+            <ul class="nav-links">
+                <li class="active" data-view="analytics">Analytics</li>
+                <li data-view="inventory">Inventory</li>
+                <li data-view="pos">Point of Sale</li>
+                <li data-view="orders">Order History</li>
+            </ul>
+        </nav>
+
+        <main class="content">
+            <!-- Inventory View -->
+            <div id="inventory-view" class="view hidden">
+                <div class="view-header">
+                    <h2>Inventory Management</h2>
+                    <button id="add-product-btn" class="btn-primary">Add Product</button>
+                </div>
+                <div class="table-container">
+                    <table id="inventory-table">
+                        <thead>
+                            <tr>
+                                <th>Image</th>
+                                <th>Name</th>
+                                <th>SKU</th>
+                                <th>Price</th>
+                                <th>Stock</th>
+                                <th>Category</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Products will be loaded here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- POS View -->
+            <div id="pos-view" class="view hidden">
+                <div class="pos-layout">
+                    <div class="product-grid-container">
+                        <div class="search-bar">
+                            <input type="text" id="pos-search" placeholder="Search products...">
+                        </div>
+                        <div id="pos-products" class="product-grid">
+                            <!-- Products grid -->
+                        </div>
+                    </div>
+                    <div class="cart-panel">
+                        <h3>Current Order</h3>
+                        <div class="cart-items" id="cart-items">
+                            <!-- Cart items -->
+                        </div>
+                        <div class="cart-summary">
+                            <div class="summary-row">
+                                <span>Total:</span>
+                                <span id="cart-total">₹0.00</span>
+                            </div>
+                            <button id="checkout-btn" class="btn-success">Checkout</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Orders View -->
+            <div id="orders-view" class="view hidden">
+                <h2>Order History</h2>
+                <div class="table-container">
+                    <table id="orders-table">
+                        <thead>
+                            <tr>
+                                <th>Order ID</th>
+                                <th>Date</th>
+                                <th>Customer</th>
+                                <th>Items</th>
+                                <th>Total</th>
+                                <th>Payment</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Orders will be loaded here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Analytics View -->
+            <div id="analytics-view" class="view hidden">
+                <h2>Business Analytics</h2>
+                <div class="analytics-cards">
+                    <div class="card">
+                        <h3>Total Revenue</h3>
+                        <p id="total-revenue">₹0.00</p>
+                    </div>
+                    <div class="card">
+                        <h3>Total Orders</h3>
+                        <p id="total-orders">0</p>
+                    </div>
+                    <div class="card">
+                        <h3>Total Products</h3>
+                        <p id="total-products">0</p>
+                    </div>
+                </div>
+                <div class="charts-container">
+                    <div class="chart-box">
+                        <canvas id="salesChart"></canvas>
+                    </div>
+                    <div class="chart-box">
+                        <canvas id="productsChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Add Product Modal -->
+    <div id="product-modal" class="modal hidden">
+        <div class="modal-content">
+            <span class="close-modal">&times;</span>
+            <h3 id="modal-title">Add New Product</h3>
+            <form id="product-form">
+                <input type="hidden" id="product-id">
+                <div class="form-group">
+                    <label>Name</label>
+                    <input type="text" id="p-name" required>
+                </div>
+                <div class="form-group">
+                    <label>SKU</label>
+                    <input type="text" id="p-sku" required>
+                </div>
+                <div class="form-group">
+                    <label>Price (₹)</label>
+                    <input type="number" id="p-price" required>
+                </div>
+                <div class="form-group">
+                    <label>Quantity</label>
+                    <input type="number" id="p-quantity" required>
+                </div>
+                <div class="form-group">
+                    <label>Category</label>
+                    <input type="text" id="p-category">
+                </div>
+                <div class="form-group">
+                    <label>Image URL</label>
+                    <input type="text" id="p-image">
+                </div>
+                <button type="submit" class="btn-primary">Save Product</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Invoice Modal -->
+    <div id="invoice-modal" class="modal hidden">
+        <div class="modal-content invoice-content">
+            <span class="close-modal" onclick="closeInvoice()">&times;</span>
+            <div id="invoice-print-area">
+                <div class="invoice-header">
+                    <h2>INVOICE</h2>
+                    <div class="shop-details">
+                        <h3>ShopManager</h3>
+                        <p>123 Main Street, City</p>
+                        <p>Phone: +91 98765 43210</p>
+                    </div>
+                    <div class="invoice-meta">
+                        <p><strong>Date:</strong> <span id="inv-date"></span></p>
+                        <p><strong>Order ID:</strong> <span id="inv-id"></span></p>
+                    </div>
+                </div>
+                <div class="customer-details">
+                    <p><strong>Customer:</strong> <span id="inv-customer"></span></p>
+                </div>
+                <table class="invoice-table">
+                    <thead>
+                        <tr>
+                            <th>Item</th>
+                            <th>Qty</th>
+                            <th>Price</th>
+                            <th>Total</th>
+                        </tr>
+                    </thead>
+                    <tbody id="inv-items">
+                        <!-- Items -->
+                    </tbody>
+                </table>
+                <div class="invoice-footer">
+                    <h3>Total: <span id="inv-total"></span></h3>
+                    <p>Payment Method: <span id="inv-payment"></span></p>
+                    <p>Thank you for your business!</p>
+                </div>
+            </div>
+            <button onclick="printInvoice()" class="btn-primary btn-print">Print Invoice</button>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="script.js"></script>
+</body>
+
+</html>
